@@ -19,7 +19,10 @@
                 
                 <select name="remind_type" id="remindType" onchange="toggleCustomFields()" required>
                     <option value="expiry">到期提醒（前1月/15天/7天/1天）</option>
-                    <option value="custom">自定义重复周期</option>
+                    <option value="weekly">每周提醒</option>
+                    <option value="monthly">每月提醒</option>
+                    <option value="yearly">每年提醒</option>
+                    <option value="custom">自定义周期</option>
                 </select>
                 
                 <div id="customFields" style="display:none; margin-top:10px; padding:12px; background:#f9f9f9; border-radius:6px;">
@@ -54,15 +57,17 @@
                     <td>{{ p.name }}</td>
                     <td>{{ p.expiry_date.strftime('%Y-%m-%d %H:%M') }}</td>
                     <td>
-                        {% if p.remind_type == 'expiry' %}
-                            到期提醒
-                        {% else %}
-                            每 {{ p.repeat_every }} 
+                        {% if p.remind_type == 'expiry' %}到期提醒
+                        {% elif p.remind_type == 'weekly' %}每周提醒
+                        {% elif p.remind_type == 'monthly' %}每月提醒
+                        {% elif p.remind_type == 'yearly' %}每年提醒
+                        {% else %}每 {{ p.repeat_every }} 
                             {% if p.repeat_unit == 'day' %}天{% elif p.repeat_unit == 'week' %}周{% else %}个月{% endif %}
                         {% endif %}
                     </td>
                     <td>{{ (p.expiry_date - now).days }} 天</td>
                     <td>
+                        <button onclick="editProject({{ p.id }})" class="edit">编辑</button>
                         <button onclick="deleteProject({{ p.id }})" class="delete">删除</button>
                     </td>
                 </tr>
@@ -70,107 +75,137 @@
             </table>
         </div>
 
-        <!-- 钉钉机器人配置 -->
+        <!-- 钉钉配置 -->
         <div class="card">
             <h2>钉钉机器人配置</h2>
             <form id="configForm">
                 <label>Access Token：</label>
-                <input type="text" id="token" placeholder="请输入钉钉机器人 Token" style="width:100%" required>
-                
+                <input type="text" id="token" placeholder="请输入钉钉机器人 Token" style="width:100%">
                 <label style="margin-top:10px;">Secret：</label>
-                <input type="text" id="secret" placeholder="请输入钉钉机器人 Secret" style="width:100%" required>
-                
+                <input type="text" id="secret" placeholder="请输入钉钉机器人 Secret" style="width:100%">
                 <div style="margin-top:15px;">
                     <button type="submit">保存配置</button>
                     <button type="button" onclick="testDingtalk()" style="background:#52c41a; margin-left:10px;">测试发送</button>
                 </div>
             </form>
-            <p style="font-size:0.9em; color:#666; margin-top:12px;">
-                使用方法：在钉钉群添加「自定义机器人」→ 开启「签名校验」→ 复制 Token 和 Secret 填入上方
-            </p>
+        </div>
+    </div>
+
+    <!-- 编辑弹窗 -->
+    <div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000;">
+        <div style="background:white; max-width:520px; margin:60px auto; padding:25px; border-radius:10px;">
+            <h2>编辑项目</h2>
+            <form id="editForm">
+                <input type="hidden" id="edit_id">
+                <input type="text" id="edit_name" placeholder="项目名称" required style="width:100%; margin:8px 0;">
+                <input type="datetime-local" id="edit_expiry" required style="width:100%; margin:8px 0;">
+                
+                <select id="edit_remind_type" onchange="toggleEditCustomFields()" style="width:100%; margin:8px 0;" required>
+                    <option value="expiry">到期提醒</option>
+                    <option value="weekly">每周提醒</option>
+                    <option value="monthly">每月提醒</option>
+                    <option value="yearly">每年提醒</option>
+                    <option value="custom">自定义周期</option>
+                </select>
+                
+                <div id="editCustomFields" style="display:none; margin:10px 0; padding:12px; background:#f9f9f9; border-radius:6px;">
+                    <div style="display:flex; gap:10px; align-items:center;">
+                        <span>每</span>
+                        <input type="number" id="edit_repeat_every" value="1" min="1" style="width:80px;">
+                        <select id="edit_repeat_unit">
+                            <option value="day">天</option>
+                            <option value="week">周</option>
+                            <option value="month">月</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div style="margin-top:15px;">
+                    <button type="submit">保存修改</button>
+                    <button type="button" onclick="closeModal()">取消</button>
+                </div>
+            </form>
         </div>
     </div>
 
     <script>
-        // 切换自定义周期字段显示
         function toggleCustomFields() {
             const type = document.getElementById('remindType').value;
-            document.getElementById('customFields').style.display = type === 'custom' ? 'block' : 'none';
+            document.getElementById('customFields').style.display = (type === 'custom') ? 'block' : 'none';
         }
 
-        // 添加项目
+        function toggleEditCustomFields() {
+            const type = document.getElementById('edit_remind_type').value;
+            document.getElementById('editCustomFields').style.display = (type === 'custom') ? 'block' : 'none';
+        }
+
+        async function editProject(id) {
+            document.getElementById('edit_id').value = id;
+            document.getElementById('editModal').style.display = 'block';
+        }
+
+        function closeModal() {
+            document.getElementById('editModal').style.display = 'none';
+        }
+
         document.getElementById('addForm').onsubmit = async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
             const res = await fetch('/add', { method: 'POST', body: formData });
+            if (res.ok) location.reload();
+        };
+
+        document.getElementById('editForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('name', document.getElementById('edit_name').value);
+            formData.append('expiry_date', document.getElementById('edit_expiry').value);
+            formData.append('remind_type', document.getElementById('edit_remind_type').value);
+            
+            if (document.getElementById('edit_remind_type').value === 'custom') {
+                formData.append('repeat_every', document.getElementById('edit_repeat_every').value);
+                formData.append('repeat_unit', document.getElementById('edit_repeat_unit').value);
+            }
+
+            const res = await fetch(`/edit/${document.getElementById('edit_id').value}`, { method: 'POST', body: formData });
             if (res.ok) {
-                alert('项目添加成功！');
+                alert('修改成功！');
                 location.reload();
             } else {
-                alert('添加失败，请检查输入');
+                alert('修改失败');
             }
         };
 
-        // 删除项目
         async function deleteProject(id) {
-            if (confirm('确定要删除这个项目吗？')) {
+            if (confirm('确定删除此项目吗？')) {
                 const res = await fetch(`/delete/${id}`, { method: 'POST' });
-                if (res.ok) {
-                    location.reload();
-                } else {
-                    alert('删除失败');
-                }
+                if (res.ok) location.reload();
             }
         }
 
         // 保存钉钉配置
         document.getElementById('configForm').onsubmit = async (e) => {
             e.preventDefault();
-            const token = document.getElementById('token').value.trim();
-            const secret = document.getElementById('secret').value.trim();
-
-            if (!token || !secret) {
-                alert('Token 和 Secret 不能为空');
-                return;
-            }
-
             const formData = new FormData();
-            formData.append('token', token);
-            formData.append('secret', secret);
-
-            const res = await fetch('/config', { method: 'POST', body: formData });
-            if (res.ok) {
-                alert('✅ 配置保存成功！');
-            } else {
-                alert('❌ 配置保存失败');
-            }
+            formData.append('token', document.getElementById('token').value);
+            formData.append('secret', document.getElementById('secret').value);
+            await fetch('/config', { method: 'POST', body: formData });
+            alert('配置已保存');
         };
 
-        // 测试钉钉消息
         async function testDingtalk() {
-            const token = document.getElementById('token').value.trim();
-            const secret = document.getElementById('secret').value.trim();
+            const token = document.getElementById('token').value;
+            const secret = document.getElementById('secret').value;
+            if (!token || !secret) return alert('请填写 Token 和 Secret');
 
-            if (!token || !secret) {
-                alert('请先填写 Token 和 Secret');
-                return;
-            }
-
-            // 先保存配置
             const formData = new FormData();
             formData.append('token', token);
             formData.append('secret', secret);
             await fetch('/config', { method: 'POST', body: formData });
 
-            // 发送测试消息
             const res = await fetch('/test_dingtalk', { method: 'POST' });
             const data = await res.json();
-
-            if (data.status === 'success') {
-                alert('✅ 测试消息发送成功！\n请检查你的钉钉群是否收到消息。');
-            } else {
-                alert('❌ 测试失败：' + (data.msg || '未知错误'));
-            }
+            alert(data.status === 'success' ? '✅ 测试发送成功！' : '❌ ' + data.msg);
         }
     </script>
 </body>
