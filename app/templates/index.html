@@ -1,34 +1,247 @@
-<!-- 项目列表 -->
-<div class="card">
-    <h2>项目列表</h2>
-    <table>
-        <tr>
-            <th>项目名称</th>
-            <th>到期时间</th>
-            <th>提醒方式</th>
-            <th>剩余天数</th>
-            <th>下次提醒</th>
-            <th>操作</th>
-        </tr>
-        {% for p in projects %}
-        <tr>
-            <td>{{ p.name }}</td>
-            <td>{{ p.expiry_date.strftime('%Y-%m-%d %H:%M') }}</td>
-            <td>
-                {% if p.remind_type == 'expiry' %}到期提醒
-                {% elif p.remind_type == 'weekly' %}每周提醒
-                {% elif p.remind_type == 'monthly' %}每月提醒
-                {% elif p.remind_type == 'yearly' %}每年提醒
-                {% else %}每 {{ p.repeat_every }} {{ {'day':'天','week':'周','month':'个月'}[p.repeat_unit] }}{% endif %}
-            </td>
-            <td>{{ (p.expiry_date - now).days }} 天</td>
-            <td><strong>{{ p.next_remind }}</strong></td>
-            <td>
-                <button onclick="editProject({{ p.id }})" class="edit">编辑</button>
-                <button onclick="testProject({{ p.id }})" class="test">测试发送</button>
-                <button onclick="deleteProject({{ p.id }})" class="delete">删除</button>
-            </td>
-        </tr>
-        {% endfor %}
-    </table>
-</div>
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>项目到期提醒系统</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <style>
+        body { font-family: 'Microsoft YaHei', Arial, sans-serif; background: #f5f7fa; margin: 0; padding: 20px; }
+        h1 { text-align: center; color: #333; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        .card { background: white; padding: 20px; margin: 15px 0; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+        input, select, button { padding: 10px; margin: 8px 0; border-radius: 6px; }
+        input, select { width: 100%; border: 1px solid #ddd; }
+        button { background: #1890ff; color: white; border: none; cursor: pointer; font-size: 16px; }
+        .edit { background: #faad14; }
+        .test { background: #52c41a; margin-left: 5px; }
+        .delete { background: #ff4d4f; }
+        table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+        th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
+        th { background: #f8f9fa; }
+        .next-remind { color: #1890ff; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <h1>📅 项目到期提醒系统</h1>
+
+    <div class="container">
+        <!-- 添加新项目 -->
+        <div class="card">
+            <h2>添加新项目</h2>
+            <form id="addForm">
+                <input type="text" name="name" placeholder="项目名称" required>
+                <input type="datetime-local" name="expiry_date" required>
+                
+                <select name="remind_type" id="remindType" onchange="toggleCustomFields()" required>
+                    <option value="expiry">到期提醒（30/20/10/7/3/2/1天）</option>
+                    <option value="weekly">每周提醒</option>
+                    <option value="monthly">每月提醒</option>
+                    <option value="yearly">每年提醒</option>
+                    <option value="custom">自定义周期</option>
+                </select>
+                
+                <div id="customFields" style="display:none; margin-top:10px; padding:12px; background:#f9f9f9; border-radius:6px;">
+                    <div style="display:flex; gap:10px; align-items:center;">
+                        <span>每</span>
+                        <input type="number" name="repeat_every" value="1" min="1" style="width:80px;">
+                        <select name="repeat_unit">
+                            <option value="day">天</option>
+                            <option value="week">周</option>
+                            <option value="month">月</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <button type="submit">添加项目</button>
+            </form>
+        </div>
+
+        <!-- 项目列表 -->
+        <div class="card">
+            <h2>项目列表</h2>
+            <table>
+                <tr>
+                    <th>项目名称</th>
+                    <th>到期时间</th>
+                    <th>提醒方式</th>
+                    <th>剩余天数</th>
+                    <th>下次提醒</th>
+                    <th>操作</th>
+                </tr>
+                {% for p in projects %}
+                <tr>
+                    <td>{{ p.name }}</td>
+                    <td>{{ p.expiry_date.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>
+                        {% if p.remind_type == 'expiry' %}到期提醒
+                        {% elif p.remind_type == 'weekly' %}每周提醒
+                        {% elif p.remind_type == 'monthly' %}每月提醒
+                        {% elif p.remind_type == 'yearly' %}每年提醒
+                        {% else %}每 {{ p.repeat_every }} {{ {'day':'天','week':'周','month':'个月'}[p.repeat_unit] }}{% endif %}
+                    </td>
+                    <td>{{ (p.expiry_date - now).days }} 天</td>
+                    <td class="next-remind">{{ p.next_remind }}</td>
+                    <td>
+                        <button onclick="editProject({{ p.id }})" class="edit">编辑</button>
+                        <button onclick="testProject({{ p.id }})" class="test">测试发送</button>
+                        <button onclick="deleteProject({{ p.id }})" class="delete">删除</button>
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+
+        <!-- 钉钉配置 -->
+        <div class="card">
+            <h2>钉钉机器人配置</h2>
+            <form id="configForm">
+                <label>Access Token：</label>
+                <input type="text" id="token" placeholder="请输入钉钉机器人 Token" style="width:100%">
+                
+                <label style="margin-top:10px;">Secret：</label>
+                <input type="text" id="secret" placeholder="请输入钉钉机器人 Secret" style="width:100%">
+                
+                <div style="margin-top:15px;">
+                    <button type="submit">保存配置</button>
+                    <button type="button" onclick="testDingtalk()" style="background:#1890ff; margin-left:10px;">全局测试</button>
+                </div>
+            </form>
+            <p style="font-size:0.9em; color:#666; margin-top:10px;">
+                在钉钉群添加自定义机器人并开启签名校验后，填入 Token 和 Secret
+            </p>
+        </div>
+    </div>
+
+    <!-- 编辑项目弹窗 -->
+    <div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000;">
+        <div style="background:white; max-width:520px; margin:60px auto; padding:25px; border-radius:10px;">
+            <h2>编辑项目</h2>
+            <form id="editForm">
+                <input type="hidden" id="edit_id">
+                
+                <input type="text" id="edit_name" placeholder="项目名称" required style="width:100%; margin:8px 0;">
+                <input type="datetime-local" id="edit_expiry" required style="width:100%; margin:8px 0;">
+                
+                <select id="edit_remind_type" onchange="toggleEditCustomFields()" style="width:100%; margin:8px 0;" required>
+                    <option value="expiry">到期提醒（30/20/10/7/3/2/1天）</option>
+                    <option value="weekly">每周提醒</option>
+                    <option value="monthly">每月提醒</option>
+                    <option value="yearly">每年提醒</option>
+                    <option value="custom">自定义周期</option>
+                </select>
+                
+                <div id="editCustomFields" style="display:none; margin:10px 0; padding:12px; background:#f9f9f9; border-radius:6px;">
+                    <div style="display:flex; gap:10px; align-items:center;">
+                        <span>每</span>
+                        <input type="number" id="edit_repeat_every" value="1" min="1" style="width:80px;">
+                        <select id="edit_repeat_unit">
+                            <option value="day">天</option>
+                            <option value="week">周</option>
+                            <option value="month">月</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <div style="margin-top:15px;">
+                    <button type="submit">保存修改</button>
+                    <button type="button" onclick="closeModal()">取消</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        // 切换自定义周期字段
+        function toggleCustomFields() {
+            const type = document.getElementById('remindType').value;
+            document.getElementById('customFields').style.display = (type === 'custom') ? 'block' : 'none';
+        }
+
+        function toggleEditCustomFields() {
+            const type = document.getElementById('edit_remind_type').value;
+            document.getElementById('editCustomFields').style.display = (type === 'custom') ? 'block' : 'none';
+        }
+
+        // 添加项目
+        document.getElementById('addForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            await fetch('/add', { method: 'POST', body: formData });
+            location.reload();
+        };
+
+        // 编辑项目
+        async function editProject(id) {
+            document.getElementById('edit_id').value = id;
+            const res = await fetch(`/get_project/${id}`);
+            const data = await res.json();
+            
+            document.getElementById('edit_name').value = data.name;
+            document.getElementById('edit_expiry').value = data.expiry_date;
+            document.getElementById('edit_remind_type').value = data.remind_type;
+            
+            toggleEditCustomFields();
+            if (data.remind_type === 'custom') {
+                document.getElementById('edit_repeat_every').value = data.repeat_every;
+                document.getElementById('edit_repeat_unit').value = data.repeat_unit;
+            }
+            
+            document.getElementById('editModal').style.display = 'block';
+        }
+
+        document.getElementById('editForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('name', document.getElementById('edit_name').value);
+            formData.append('expiry_date', document.getElementById('edit_expiry').value);
+            formData.append('remind_type', document.getElementById('edit_remind_type').value);
+            
+            if (document.getElementById('edit_remind_type').value === 'custom') {
+                formData.append('repeat_every', document.getElementById('edit_repeat_every').value);
+                formData.append('repeat_unit', document.getElementById('edit_repeat_unit').value);
+            }
+            
+            await fetch(`/edit/${document.getElementById('edit_id').value}`, { method: 'POST', body: formData });
+            location.reload();
+        };
+
+        function closeModal() {
+            document.getElementById('editModal').style.display = 'none';
+        }
+
+        // 测试单个项目
+        async function testProject(id) {
+            if (!confirm('确定要发送该项目的测试提醒吗？')) return;
+            const res = await fetch(`/test_project/${id}`, { method: 'POST' });
+            const data = await res.json();
+            alert(data.status === 'success' ? '✅ 测试消息已发送！' : '❌ 发送失败');
+        }
+
+        // 删除项目
+        async function deleteProject(id) {
+            if (confirm('确定删除此项目吗？')) {
+                await fetch(`/delete/${id}`, { method: 'POST' });
+                location.reload();
+            }
+        }
+
+        // 保存钉钉配置
+        document.getElementById('configForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('token', document.getElementById('token').value);
+            formData.append('secret', document.getElementById('secret').value);
+            await fetch('/config', { method: 'POST', body: formData });
+            alert('✅ 配置已保存');
+        };
+
+        // 全局测试
+        async function testDingtalk() {
+            const res = await fetch('/test_dingtalk', { method: 'POST' });
+            const data = await res.json();
+            alert(data.status === 'success' ? '✅ 全局测试消息已发送！' : '❌ 发送失败');
+        }
+    </script>
+</body>
+</html>
