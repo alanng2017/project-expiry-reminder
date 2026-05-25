@@ -9,9 +9,10 @@ class Project(db.Model):
     expiry_date = db.Column(db.DateTime, nullable=False)
     
     # 提醒类型
-    remind_type = db.Column(db.String(20), default='expiry')   # expiry / custom
+    remind_type = db.Column(db.String(20), default='expiry')   # expiry / weekly / monthly / yearly / custom
+    
     repeat_every = db.Column(db.Integer, default=1)
-    repeat_unit = db.Column(db.String(10), default='day')     # day / week / month
+    repeat_unit = db.Column(db.String(10), default='day')
     
     # 到期提醒标记
     notified_30d = db.Column(db.Boolean, default=False)
