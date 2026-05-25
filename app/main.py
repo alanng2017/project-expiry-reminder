@@ -8,6 +8,7 @@ import hmac
 import hashlib
 import base64
 import urllib.parse
+from apscheduler.schedulers.background import BackgroundScheduler
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data/projects.db'
@@ -55,14 +56,13 @@ def add_project():
 @app.route('/edit/<int:id>', methods=['POST'])
 def edit_project(id):
     project = Project.query.get(id)
-    if not project:
-        return jsonify({'status': 'error'}), 404
-    
+    if not project: return jsonify({'status': 'error'}), 404
     try:
         project.name = request.form.get('name')
         project.expiry_date = datetime.strptime(request.form.get('expiry_date'), '%Y-%m-%dT%H:%M')
         project.remind_type = request.form.get('remind_type')
         
+        # 重置通知标记
         project.notified_30d = project.notified_20d = project.notified_10d = False
         project.notified_7d = project.notified_3d = project.notified_2d = project.notified_1d = False
         project.last_notified = None
@@ -94,23 +94,16 @@ def delete_project(id):
     return jsonify({'status': 'error'}), 404
 
 
-# 新增：单个项目测试发送
 @app.route('/test_project/<int:id>', methods=['POST'])
 def test_project(id):
     project = Project.query.get(id)
-    if not project:
-        return jsonify({'status': 'error', 'msg': '项目不存在'}), 404
+    if not project: return jsonify({'status': 'error', 'msg': '项目不存在'}), 404
     
-    now = datetime.now()
-    days_left = (project.expiry_date - now).days
-    
+    days_left = (project.expiry_date - datetime.now()).days
     message = f"**🧪 项目测试提醒**\n\n**项目名称**：{project.name}\n**到期时间**：{project.expiry_date.strftime('%Y-%m-%d %H:%M')}\n**剩余天数**：{days_left} 天"
     
     success = send_dingtalk(message)
-    if success:
-        return jsonify({'status': 'success', 'msg': '测试消息已发送'})
-    else:
-        return jsonify({'status': 'error', 'msg': '发送失败，请检查钉钉配置'}), 400
+    return jsonify({'status': 'success' if success else 'error'})
 
 
 @app.route('/get_project/<int:id>', methods=['GET'])
@@ -135,12 +128,6 @@ def save_config():
     return jsonify({'status': 'success'})
 
 
-@app.route('/test_dingtalk', methods=['POST'])
-def test_dingtalk():
-    success = send_dingtalk("✅ 全局测试消息：钉钉机器人连接正常！")
-    return jsonify({'status': 'success' if success else 'error'})
-
-
 def send_dingtalk(message):
     global DINGTALK_TOKEN, DINGTALK_SECRET
     if not DINGTALK_TOKEN or not DINGTALK_SECRET:
@@ -153,65 +140,59 @@ def send_dingtalk(message):
         sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
         
         webhook = f"https://oapi.dingtalk.com/robot/send?access_token={DINGTALK_TOKEN}&timestamp={timestamp}&sign={sign}"
-        data = {"msgtype": "markdown", "markdown": {"title": "项目提醒", "text": message}}
+        data = {"msgtype": "markdown", "markdown": {"title": "项目到期提醒", "text": message}}
         resp = requests.post(webhook, json=data, timeout=10)
         return resp.json().get('errcode') == 0
     except:
         return False
 
 
-# ==================== 定时任务 ====================
-def check_expirations():
+# ==================== 每日 8:05 执行提醒 ====================
+def daily_reminder():
     with app.app_context():
         now = datetime.now()
         projects = Project.query.all()
         
         for p in projects:
-            if p.remind_type == 'expiry':
-                days_left = (p.expiry_date - now).days
-                if 20 < days_left <= 30 and not p.notified_30d:
-                    send_dingtalk(f"**⚠️ 项目即将到期**\n\n**项目**：{p.name}\n**到期**：{p.expiry_date.strftime('%Y-%m-%d %H:%M')}\n**剩余**：{days_left}天"); p.notified_30d = True
-                elif 10 < days_left <= 20 and not p.notified_20d:
-                    send_dingtalk(f"**⚠️ 项目即将到期**\n\n**项目**：{p.name}\n**到期**：{p.expiry_date.strftime('%Y-%m-%d %H:%M')}\n**剩余**：{days_left}天"); p.notified_20d = True
-                elif 7 < days_left <= 10 and not p.notified_10d:
-                    send_dingtalk(f"**⚠️ 项目即将到期**\n\n**项目**：{p.name}\n**到期**：{p.expiry_date.strftime('%Y-%m-%d %H:%M')}\n**剩余**：{days_left}天"); p.notified_10d = True
-                elif 3 < days_left <= 7 and not p.notified_7d:
-                    send_dingtalk(f"**🔴 项目即将到期**\n\n**项目**：{p.name}\n**到期**：{p.expiry_date.strftime('%Y-%m-%d %H:%M')}\n**剩余**：{days_left}天"); p.notified_7d = True
-                elif 2 < days_left <= 3 and not p.notified_3d:
-                    send_dingtalk(f"**🔴 项目即将到期**\n\n**项目**：{p.name}\n**到期**：{p.expiry_date.strftime('%Y-%m-%d %H:%M')}\n**剩余**：{days_left}天"); p.notified_3d = True
-                elif 1 < days_left <= 2 and not p.notified_2d:
-                    send_dingtalk(f"**🚨 项目即将到期**\n\n**项目**：{p.name}\n**到期**：{p.expiry_date.strftime('%Y-%m-%d %H:%M')}\n**剩余**：{days_left}天"); p.notified_2d = True
-                elif 0 <= days_left <= 1 and not p.notified_1d:
-                    send_dingtalk(f"**🚨 项目即将到期！**\n\n**项目**：{p.name}\n**到期**：{p.expiry_date.strftime('%Y-%m-%d %H:%M')}\n**剩余**：{days_left}天"); p.notified_1d = True
-
-            else:
-                should_notify = False
-                if p.last_notified is None:
-                    should_notify = True
-                else:
-                    delta = now - p.last_notified
-                    if p.repeat_unit == 'day' and delta.days >= p.repeat_every:
-                        should_notify = True
-                    elif p.repeat_unit == 'week' and delta.days >= p.repeat_every * 7:
-                        should_notify = True
-                    elif p.repeat_unit == 'month':
-                        months = (now.year - p.last_notified.year)*12 + (now.month - p.last_notified.month)
-                        if months >= p.repeat_every:
-                            should_notify = True
+            if p.remind_type != 'expiry':
+                continue  # 目前只处理到期提醒
                 
-                if should_notify:
-                    send_dingtalk(f"**🔄 周期提醒**\n\n**项目**：{p.name}\n**时间**：{now.strftime('%Y-%m-%d %H:%M')}")
-                    p.last_notified = now
+            days_left = (p.expiry_date - now).days
+            
+            message = f"**⚠️ 项目到期提醒**\n\n**项目名称**：{p.name}\n**到期时间**：{p.expiry_date.strftime('%Y-%m-%d %H:%M')}\n**剩余天数**：{days_left} 天"
+            
+            sent = False
+            if 20 < days_left <= 30 and not p.notified_30d:
+                send_dingtalk(message); p.notified_30d = True; sent = True
+            elif 10 < days_left <= 20 and not p.notified_20d:
+                send_dingtalk(message); p.notified_20d = True; sent = True
+            elif 7 < days_left <= 10 and not p.notified_10d:
+                send_dingtalk(message); p.notified_10d = True; sent = True
+            elif 3 < days_left <= 7 and not p.notified_7d:
+                send_dingtalk(message); p.notified_7d = True; sent = True
+            elif 2 < days_left <= 3 and not p.notified_3d:
+                send_dingtalk(message); p.notified_3d = True; sent = True
+            elif 1 < days_left <= 2 and not p.notified_2d:
+                send_dingtalk(message); p.notified_2d = True; sent = True
+            elif 0 <= days_left <= 1 and not p.notified_1d:
+                send_dingtalk(f"**🚨 项目即将到期！**\n\n**项目名称**：{p.name}\n**到期时间**：{p.expiry_date.strftime('%Y-%m-%d %H:%M')}\n**剩余天数**：{days_left} 天")
+                p.notified_1d = True
+                sent = True
+            
+            if sent:
+                db.session.commit()
 
-        db.session.commit()
 
-def scheduler():
-    while True:
-        check_expirations()
-        time.sleep(1800)
-
+# ==================== 启动 ====================
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-    threading.Thread(target=scheduler, daemon=True).start()
+    
+    # 启动每日 8:05 定时任务
+    scheduler = BackgroundScheduler()
+    scheduler.add_job(daily_reminder, 'cron', hour=8, minute=5)
+    scheduler.start()
+    
+    print("✅ 项目到期提醒系统已启动，每天早上 8:05 发送提醒")
+    
     app.run(host='0.0.0.0', port=5000)
