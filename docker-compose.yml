@@ -1,0 +1,11 @@
+version: '3.8'
+
+services:
+  reminder:
+    build: .
+    container_name: project-reminder
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/app/data
+    restart: unless-stopped
