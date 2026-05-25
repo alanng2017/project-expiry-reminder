@@ -1,6 +1,6 @@
 from flask import Flask, render_template, request, jsonify
 from models import db, Project
-from datetime import datetime, timedelta
+from datetime import datetime
 import requests
 import threading
 import time
@@ -15,7 +15,6 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
 
-# 全局配置
 DINGTALK_TOKEN = None
 DINGTALK_SECRET = None
 
@@ -33,20 +32,73 @@ def add_project():
     
     try:
         expiry_date = datetime.strptime(expiry_str, '%Y-%m-%dT%H:%M')
+        
         project = Project(
             name=name,
             expiry_date=expiry_date,
             remind_type=remind_type
         )
-        if remind_type == 'custom':
-            project.repeat_every = int(request.form.get('repeat_every', 1))
-            project.repeat_unit = request.form.get('repeat_unit', 'day')
+        
+        if remind_type in ['weekly', 'monthly', 'yearly', 'custom']:
+            if remind_type == 'custom':
+                project.repeat_every = int(request.form.get('repeat_every', 1))
+                project.repeat_unit = request.form.get('repeat_unit', 'day')
+            elif remind_type == 'weekly':
+                project.repeat_every = 1
+                project.repeat_unit = 'week'
+            elif remind_type == 'monthly':
+                project.repeat_every = 1
+                project.repeat_unit = 'month'
+            elif remind_type == 'yearly':
+                project.repeat_every = 1
+                project.repeat_unit = 'month'
         
         db.session.add(project)
         db.session.commit()
         return jsonify({'status': 'success'})
     except Exception as e:
         return jsonify({'status': 'error', 'msg': str(e)}), 400
+
+
+@app.route('/edit/<int:id>', methods=['POST'])
+def edit_project(id):
+    project = Project.query.get(id)
+    if not project:
+        return jsonify({'status': 'error'}), 404
+    
+    try:
+        name = request.form.get('name')
+        expiry_str = request.form.get('expiry_date')
+        remind_type = request.form.get('remind_type')
+        
+        project.name = name
+        project.expiry_date = datetime.strptime(expiry_str, '%Y-%m-%dT%H:%M')
+        project.remind_type = remind_type
+        project.notified_30d = False
+        project.notified_15d = False
+        project.notified_7d = False
+        project.notified_1d = False
+        project.last_notified = None
+        
+        if remind_type in ['weekly', 'monthly', 'yearly', 'custom']:
+            if remind_type == 'custom':
+                project.repeat_every = int(request.form.get('repeat_every', 1))
+                project.repeat_unit = request.form.get('repeat_unit', 'day')
+            elif remind_type == 'weekly':
+                project.repeat_every = 1
+                project.repeat_unit = 'week'
+            elif remind_type == 'monthly':
+                project.repeat_every = 1
+                project.repeat_unit = 'month'
+            elif remind_type == 'yearly':
+                project.repeat_every = 1
+                project.repeat_unit = 'month'
+        
+        db.session.commit()
+        return jsonify({'status': 'success'})
+    except:
+        return jsonify({'status': 'error'}), 400
+
 
 @app.route('/delete/<int:id>', methods=['POST'])
 def delete_project(id):
@@ -57,7 +109,7 @@ def delete_project(id):
         return jsonify({'status': 'success'})
     return jsonify({'status': 'error'}), 404
 
-# 新增：保存钉钉配置
+
 @app.route('/config', methods=['POST'])
 def save_config():
     global DINGTALK_TOKEN, DINGTALK_SECRET
@@ -65,7 +117,7 @@ def save_config():
     DINGTALK_SECRET = request.form.get('secret')
     return jsonify({'status': 'success'})
 
-# 新增：测试钉钉消息
+
 @app.route('/test_dingtalk', methods=['POST'])
 def test_dingtalk():
     message = "✅ 测试消息：钉钉机器人连接成功！\n这是来自项目到期提醒系统的测试。"
@@ -75,13 +127,13 @@ def test_dingtalk():
     else:
         return jsonify({'status': 'error', 'msg': '发送失败，请检查 Token 和 Secret'}), 400
 
-# ==================== 钉钉通知（支持签名） ====================
+
+# ==================== 钉钉发送 ====================
 def send_dingtalk(message):
     global DINGTALK_TOKEN, DINGTALK_SECRET
     if not DINGTALK_TOKEN or not DINGTALK_SECRET:
         return False
 
-    # 生成签名
     timestamp = str(round(time.time() * 1000))
     secret_enc = DINGTALK_SECRET.encode('utf-8')
     string_to_sign = f'{timestamp}\n{DINGTALK_SECRET}'
@@ -98,12 +150,12 @@ def send_dingtalk(message):
             "text": message
         }
     }
-
     try:
         resp = requests.post(webhook, json=data, timeout=10)
         return resp.json().get('errcode') == 0
     except:
         return False
+
 
 # ==================== 定时任务 ====================
 def check_expirations():
@@ -117,7 +169,6 @@ def check_expirations():
                 if 15 < days_left <= 30 and not p.notified_30d:
                     send_dingtalk(f"**⚠️ 项目即将到期**\n\n**项目**：{p.name}\n**到期**：{p.expiry_date.strftime('%Y-%m-%d %H:%M')}\n**剩余**：{days_left}天")
                     p.notified_30d = True
-                # ...（其余到期提醒逻辑保持不变）
                 elif 7 < days_left <= 15 and not p.notified_15d:
                     send_dingtalk(f"**⚠️ 项目即将到期**\n\n**项目**：{p.name}\n**到期**：{p.expiry_date.strftime('%Y-%m-%d %H:%M')}\n**剩余**：{days_left}天")
                     p.notified_15d = True
@@ -128,24 +179,30 @@ def check_expirations():
                     send_dingtalk(f"**🚨 项目即将到期！**\n\n**项目**：{p.name}\n**到期**：{p.expiry_date.strftime('%Y-%m-%d %H:%M')}\n**剩余**：{days_left}天")
                     p.notified_1d = True
 
-            elif p.remind_type == 'custom':
+            else:  # weekly, monthly, yearly, custom
                 should_notify = False
                 if p.last_notified is None:
                     should_notify = True
                 else:
                     delta = now - p.last_notified
-                    if p.repeat_unit == 'day' and delta.days >= p.repeat_every:
-                        should_notify = True
-                    elif p.repeat_unit == 'week' and delta.days >= p.repeat_every * 7:
+                    if p.repeat_unit == 'week' and delta.days >= p.repeat_every * 7:
                         should_notify = True
                     elif p.repeat_unit == 'month':
                         months = (now.year - p.last_notified.year)*12 + (now.month - p.last_notified.month)
                         if months >= p.repeat_every:
                             should_notify = True
+                    elif p.repeat_unit == 'day' and delta.days >= p.repeat_every:
+                        should_notify = True
+                
+                if should_notify and p.remind_type == 'yearly':
+                    if now.month == p.expiry_date.month and now.day == p.expiry_date.day:
+                        should_notify = True
+                    else:
+                        should_notify = False
                 
                 if should_notify:
                     unit_text = {'day':'天', 'week':'周', 'month':'个月'}[p.repeat_unit]
-                    send_dingtalk(f"**🔄 周期提醒**\n\n**项目**：{p.name}\n**周期**：每 {p.repeat_every} {unit_text}\n**时间**：{now.strftime('%Y-%m-%d %H:%M')}")
+                    send_dingtalk(f"**🔄 {p.remind_type}提醒**\n\n**项目**：{p.name}\n**时间**：{now.strftime('%Y-%m-%d %H:%M')}")
                     p.last_notified = now
 
         db.session.commit()
