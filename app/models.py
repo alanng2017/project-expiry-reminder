@@ -14,10 +14,13 @@ class Project(db.Model):
     repeat_every = db.Column(db.Integer, default=1)
     repeat_unit = db.Column(db.String(10), default='day')
     
-    # 到期提醒标记
+    # 到期提醒标记（更新为更多时间点）
     notified_30d = db.Column(db.Boolean, default=False)
-    notified_15d = db.Column(db.Boolean, default=False)
+    notified_20d = db.Column(db.Boolean, default=False)
+    notified_10d = db.Column(db.Boolean, default=False)
     notified_7d = db.Column(db.Boolean, default=False)
+    notified_3d = db.Column(db.Boolean, default=False)
+    notified_2d = db.Column(db.Boolean, default=False)
     notified_1d = db.Column(db.Boolean, default=False)
     
     # 自定义周期最后提醒时间
