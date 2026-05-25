@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>项目到期提醒系统</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <h1>📅 项目到期提醒系统</h1>
+
+    <div class="container">
+        <!-- 添加项目 -->
+        <div class="card">
+            <h2>添加新项目</h2>
+            <form id="addForm">
+                <input type="text" name="name" placeholder="项目名称" required>
+                <input type="datetime-local" name="expiry_date" required>
+                
+                <select name="remind_type" id="remindType" onchange="toggleCustomFields()" required>
+                    <option value="expiry">到期提醒（前1月/15天/7天/1天）</option>
+                    <option value="custom">自定义重复周期</option>
+                </select>
+                
+                <div id="customFields" style="display:none; margin-top:10px; padding:10px; background:#f9f9f9; border-radius:6px;">
+                    <div style="display:flex; gap:10px; align-items:center;">
+                        <span>每</span>
+                        <input type="number" name="repeat_every" value="1" min="1" style="width:80px;">
+                        <select name="repeat_unit">
+                            <option value="day">天</option>
+                            <option value="week">周</option>
+                            <option value="month">月</option>
+                        </select>
+                    </div>
+                </div>
+                
+                <button type="submit">添加项目</button>
+            </form>
+        </div>
+
+        <!-- 项目列表 -->
+        <div class="card">
+            <h2>项目列表</h2>
+            <table>
+                <tr>
+                    <th>项目名称</th>
+                    <th>到期时间</th>
+                    <th>提醒方式</th>
+                    <th>剩余</th>
+                    <th>操作</th>
+                </tr>
+                {% for p in projects %}
+                <tr>
+                    <td>{{ p.name }}</td>
+                    <td>{{ p.expiry_date.strftime('%Y-%m-%d %H:%M') }}</td>
+                    <td>
+                        {% if p.remind_type == 'expiry' %}
+                            到期提醒
+                        {% else %}
+                            每 {{ p.repeat_every }} 
+                            {% if p.repeat_unit == 'day' %}天{% elif p.repeat_unit == 'week' %}周{% else %}个月{% endif %}
+                        {% endif %}
+                    </td>
+                    <td>{{ (p.expiry_date - now).days }} 天</td>
+                    <td><button onclick="deleteProject({{ p.id }})" class="delete">删除</button></td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+
+        <!-- 钉钉配置 -->
+        <div class="card">
+            <h2>钉钉机器人配置</h2>
+            <form id="configForm">
+                <input type="text" id="webhook" placeholder="钉钉 Webhook URL" style="width:100%">
+                <button type="submit">保存配置</button>
+            </form>
+            <p style="font-size:0.9em;color:#666;">在钉钉群添加自定义机器人后复制 Webhook 地址</p>
+        </div>
+    </div>
+
+    <script>
+        function toggleCustomFields() {
+            const type = document.getElementById('remindType').value;
+            document.getElementById('customFields').style.display = type === 'custom' ? 'block' : 'none';
+        }
+
+        document.getElementById('addForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData(e.target);
+            const res = await fetch('/add', { method: 'POST', body: formData });
+            if (res.ok) location.reload();
+        };
+
+        async function deleteProject(id) {
+            if (confirm('确定删除此项目吗？')) {
+                const res = await fetch(`/delete/${id}`, { method: 'POST' });
+                if (res.ok) location.reload();
+            }
+        }
+
+        document.getElementById('configForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const formData = new FormData();
+            formData.append('webhook', document.getElementById('webhook').value);
+            await fetch('/config', { method: 'POST', body: formData });
+            alert('钉钉配置已保存！');
+        };
+    </script>
+</body>
+</html>
