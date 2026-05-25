@@ -1,0 +1,10 @@
+body { font-family: 'Microsoft YaHei', Arial, sans-serif; background: #f5f7fa; margin: 0; padding: 20px; }
+h1 { text-align: center; color: #333; }
+.container { max-width: 1100px; margin: 0 auto; }
+.card { background: white; padding: 20px; margin: 15px 0; border-radius: 10px; box-shadow: 0 2px 12px rgba(0,0,0,0.08); }
+input, select, button { padding: 10px; margin: 8px 0; border-radius: 6px; }
+input, select { width: 100%; border: 1px solid #ddd; }
+button { background: #1890ff; color: white; border: none; cursor: pointer; font-size: 16px; }
+.delete { background: #ff4d4f; }
+table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+th, td { padding: 12px; text-align: left; border-bottom: 1px solid #eee; }
