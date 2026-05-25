@@ -22,7 +22,7 @@
                     <option value="custom">自定义重复周期</option>
                 </select>
                 
-                <div id="customFields" style="display:none; margin-top:10px; padding:10px; background:#f9f9f9; border-radius:6px;">
+                <div id="customFields" style="display:none; margin-top:10px; padding:12px; background:#f9f9f9; border-radius:6px;">
                     <div style="display:flex; gap:10px; align-items:center;">
                         <span>每</span>
                         <input type="number" name="repeat_every" value="1" min="1" style="width:80px;">
@@ -46,7 +46,7 @@
                     <th>项目名称</th>
                     <th>到期时间</th>
                     <th>提醒方式</th>
-                    <th>剩余</th>
+                    <th>剩余天数</th>
                     <th>操作</th>
                 </tr>
                 {% for p in projects %}
@@ -62,50 +62,116 @@
                         {% endif %}
                     </td>
                     <td>{{ (p.expiry_date - now).days }} 天</td>
-                    <td><button onclick="deleteProject({{ p.id }})" class="delete">删除</button></td>
+                    <td>
+                        <button onclick="deleteProject({{ p.id }})" class="delete">删除</button>
+                    </td>
                 </tr>
                 {% endfor %}
             </table>
         </div>
 
-        <!-- 钉钉配置 -->
+        <!-- 钉钉机器人配置 -->
         <div class="card">
             <h2>钉钉机器人配置</h2>
             <form id="configForm">
-                <input type="text" id="webhook" placeholder="钉钉 Webhook URL" style="width:100%">
-                <button type="submit">保存配置</button>
+                <label>Access Token：</label>
+                <input type="text" id="token" placeholder="请输入钉钉机器人 Token" style="width:100%" required>
+                
+                <label style="margin-top:10px;">Secret：</label>
+                <input type="text" id="secret" placeholder="请输入钉钉机器人 Secret" style="width:100%" required>
+                
+                <div style="margin-top:15px;">
+                    <button type="submit">保存配置</button>
+                    <button type="button" onclick="testDingtalk()" style="background:#52c41a; margin-left:10px;">测试发送</button>
+                </div>
             </form>
-            <p style="font-size:0.9em;color:#666;">在钉钉群添加自定义机器人后复制 Webhook 地址</p>
+            <p style="font-size:0.9em; color:#666; margin-top:12px;">
+                使用方法：在钉钉群添加「自定义机器人」→ 开启「签名校验」→ 复制 Token 和 Secret 填入上方
+            </p>
         </div>
     </div>
 
     <script>
+        // 切换自定义周期字段显示
         function toggleCustomFields() {
             const type = document.getElementById('remindType').value;
             document.getElementById('customFields').style.display = type === 'custom' ? 'block' : 'none';
         }
 
+        // 添加项目
         document.getElementById('addForm').onsubmit = async (e) => {
             e.preventDefault();
             const formData = new FormData(e.target);
             const res = await fetch('/add', { method: 'POST', body: formData });
-            if (res.ok) location.reload();
+            if (res.ok) {
+                alert('项目添加成功！');
+                location.reload();
+            } else {
+                alert('添加失败，请检查输入');
+            }
         };
 
+        // 删除项目
         async function deleteProject(id) {
-            if (confirm('确定删除此项目吗？')) {
+            if (confirm('确定要删除这个项目吗？')) {
                 const res = await fetch(`/delete/${id}`, { method: 'POST' });
-                if (res.ok) location.reload();
+                if (res.ok) {
+                    location.reload();
+                } else {
+                    alert('删除失败');
+                }
             }
         }
 
+        // 保存钉钉配置
         document.getElementById('configForm').onsubmit = async (e) => {
             e.preventDefault();
+            const token = document.getElementById('token').value.trim();
+            const secret = document.getElementById('secret').value.trim();
+
+            if (!token || !secret) {
+                alert('Token 和 Secret 不能为空');
+                return;
+            }
+
             const formData = new FormData();
-            formData.append('webhook', document.getElementById('webhook').value);
-            await fetch('/config', { method: 'POST', body: formData });
-            alert('钉钉配置已保存！');
+            formData.append('token', token);
+            formData.append('secret', secret);
+
+            const res = await fetch('/config', { method: 'POST', body: formData });
+            if (res.ok) {
+                alert('✅ 配置保存成功！');
+            } else {
+                alert('❌ 配置保存失败');
+            }
         };
+
+        // 测试钉钉消息
+        async function testDingtalk() {
+            const token = document.getElementById('token').value.trim();
+            const secret = document.getElementById('secret').value.trim();
+
+            if (!token || !secret) {
+                alert('请先填写 Token 和 Secret');
+                return;
+            }
+
+            // 先保存配置
+            const formData = new FormData();
+            formData.append('token', token);
+            formData.append('secret', secret);
+            await fetch('/config', { method: 'POST', body: formData });
+
+            // 发送测试消息
+            const res = await fetch('/test_dingtalk', { method: 'POST' });
+            const data = await res.json();
+
+            if (data.status === 'success') {
+                alert('✅ 测试消息发送成功！\n请检查你的钉钉群是否收到消息。');
+            } else {
+                alert('❌ 测试失败：' + (data.msg || '未知错误'));
+            }
+        }
     </script>
 </body>
 </html>
