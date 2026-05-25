@@ -4,6 +4,10 @@ from datetime import datetime, timedelta
 import requests
 import threading
 import time
+import hmac
+import hashlib
+import base64
+import urllib.parse
 
 app = Flask(__name__)
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///data/projects.db'
@@ -11,7 +15,9 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db.init_app(app)
 
-DINGTALK_WEBHOOK = None
+# 全局配置
+DINGTALK_TOKEN = None
+DINGTALK_SECRET = None
 
 # ==================== 路由 ====================
 @app.route('/')
@@ -27,13 +33,11 @@ def add_project():
     
     try:
         expiry_date = datetime.strptime(expiry_str, '%Y-%m-%dT%H:%M')
-        
         project = Project(
             name=name,
             expiry_date=expiry_date,
             remind_type=remind_type
         )
-        
         if remind_type == 'custom':
             project.repeat_every = int(request.form.get('repeat_every', 1))
             project.repeat_unit = request.form.get('repeat_unit', 'day')
@@ -53,17 +57,40 @@ def delete_project(id):
         return jsonify({'status': 'success'})
     return jsonify({'status': 'error'}), 404
 
+# 新增：保存钉钉配置
 @app.route('/config', methods=['POST'])
 def save_config():
-    global DINGTALK_WEBHOOK
-    DINGTALK_WEBHOOK = request.form.get('webhook')
+    global DINGTALK_TOKEN, DINGTALK_SECRET
+    DINGTALK_TOKEN = request.form.get('token')
+    DINGTALK_SECRET = request.form.get('secret')
     return jsonify({'status': 'success'})
 
-# ==================== 钉钉通知 ====================
+# 新增：测试钉钉消息
+@app.route('/test_dingtalk', methods=['POST'])
+def test_dingtalk():
+    message = "✅ 测试消息：钉钉机器人连接成功！\n这是来自项目到期提醒系统的测试。"
+    success = send_dingtalk(message)
+    if success:
+        return jsonify({'status': 'success', 'msg': '测试消息已发送！'})
+    else:
+        return jsonify({'status': 'error', 'msg': '发送失败，请检查 Token 和 Secret'}), 400
+
+# ==================== 钉钉通知（支持签名） ====================
 def send_dingtalk(message):
-    global DINGTALK_WEBHOOK
-    if not DINGTALK_WEBHOOK:
-        return
+    global DINGTALK_TOKEN, DINGTALK_SECRET
+    if not DINGTALK_TOKEN or not DINGTALK_SECRET:
+        return False
+
+    # 生成签名
+    timestamp = str(round(time.time() * 1000))
+    secret_enc = DINGTALK_SECRET.encode('utf-8')
+    string_to_sign = f'{timestamp}\n{DINGTALK_SECRET}'
+    string_to_sign_enc = string_to_sign.encode('utf-8')
+    hmac_code = hmac.new(secret_enc, string_to_sign_enc, digestmod=hashlib.sha256).digest()
+    sign = urllib.parse.quote_plus(base64.b64encode(hmac_code))
+
+    webhook = f"https://oapi.dingtalk.com/robot/send?access_token={DINGTALK_TOKEN}&timestamp={timestamp}&sign={sign}"
+
     data = {
         "msgtype": "markdown",
         "markdown": {
@@ -71,12 +98,14 @@ def send_dingtalk(message):
             "text": message
         }
     }
-    try:
-        requests.post(DINGTALK_WEBHOOK, json=data, timeout=10)
-    except:
-        pass
 
-# ==================== 定时检查 ====================
+    try:
+        resp = requests.post(webhook, json=data, timeout=10)
+        return resp.json().get('errcode') == 0
+    except:
+        return False
+
+# ==================== 定时任务 ====================
 def check_expirations():
     with app.app_context():
         now = datetime.now()
@@ -88,6 +117,7 @@ def check_expirations():
                 if 15 < days_left <= 30 and not p.notified_30d:
                     send_dingtalk(f"**⚠️ 项目即将到期**\n\n**项目**：{p.name}\n**到期**：{p.expiry_date.strftime('%Y-%m-%d %H:%M')}\n**剩余**：{days_left}天")
                     p.notified_30d = True
+                # ...（其余到期提醒逻辑保持不变）
                 elif 7 < days_left <= 15 and not p.notified_15d:
                     send_dingtalk(f"**⚠️ 项目即将到期**\n\n**项目**：{p.name}\n**到期**：{p.expiry_date.strftime('%Y-%m-%d %H:%M')}\n**剩余**：{days_left}天")
                     p.notified_15d = True
@@ -123,7 +153,7 @@ def check_expirations():
 def scheduler():
     while True:
         check_expirations()
-        time.sleep(3600)  # 每小时检查一次
+        time.sleep(3600)
 
 # ==================== 启动 ====================
 if __name__ == '__main__':
