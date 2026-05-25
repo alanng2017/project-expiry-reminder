@@ -5,12 +5,17 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>项目到期提醒系统</title>
     <link rel="stylesheet" href="/static/style.css">
+    <style>
+        .test { background:#52c41a; margin-left:5px; }
+        .edit { background:#faad14; }
+        .delete { background:#ff4d4f; }
+    </style>
 </head>
 <body>
     <h1>📅 项目到期提醒系统</h1>
 
     <div class="container">
-        <!-- 添加项目部分（保持不变） -->
+        <!-- 添加项目 -->
         <div class="card">
             <h2>添加新项目</h2>
             <form id="addForm">
@@ -63,6 +68,7 @@
                     <td>{{ (p.expiry_date - now).days }} 天</td>
                     <td>
                         <button onclick="editProject({{ p.id }})" class="edit">编辑</button>
+                        <button onclick="testProject({{ p.id }})" class="test">测试发送</button>
                         <button onclick="deleteProject({{ p.id }})" class="delete">删除</button>
                     </td>
                 </tr>
@@ -80,13 +86,13 @@
                 <input type="text" id="secret" placeholder="钉钉机器人 Secret" style="width:100%">
                 <div style="margin-top:15px;">
                     <button type="submit">保存配置</button>
-                    <button type="button" onclick="testDingtalk()" style="background:#52c41a; margin-left:10px;">测试发送</button>
+                    <button type="button" onclick="testDingtalk()" style="background:#1890ff; margin-left:10px;">全局测试</button>
                 </div>
             </form>
         </div>
     </div>
 
-    <!-- 编辑弹窗 -->
+    <!-- 编辑弹窗（保持不变） -->
     <div id="editModal" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.7); z-index:1000;">
         <div style="background:white; max-width:520px; margin:60px auto; padding:25px; border-radius:10px;">
             <h2>编辑项目</h2>
@@ -94,7 +100,6 @@
                 <input type="hidden" id="edit_id">
                 <input type="text" id="edit_name" placeholder="项目名称" required style="width:100%; margin:8px 0;">
                 <input type="datetime-local" id="edit_expiry" required style="width:100%; margin:8px 0;">
-                
                 <select id="edit_remind_type" onchange="toggleEditCustomFields()" style="width:100%; margin:8px 0;" required>
                     <option value="expiry">到期提醒（30/20/10/7/3/2/1天）</option>
                     <option value="weekly">每周提醒</option>
@@ -102,7 +107,6 @@
                     <option value="yearly">每年提醒</option>
                     <option value="custom">自定义周期</option>
                 </select>
-                
                 <div id="editCustomFields" style="display:none; margin:10px 0; padding:12px; background:#f9f9f9;">
                     <div style="display:flex; gap:10px;">
                         <span>每</span>
@@ -114,7 +118,6 @@
                         </select>
                     </div>
                 </div>
-                
                 <div style="margin-top:15px;">
                     <button type="submit">保存修改</button>
                     <button type="button" onclick="closeModal()">取消</button>
@@ -124,7 +127,20 @@
     </div>
 
     <script>
-        // 自动回填编辑数据
+        async function testProject(id) {
+            if (!confirm('确定发送该项目的测试提醒吗？')) return;
+            
+            const res = await fetch(`/test_project/${id}`, { method: 'POST' });
+            const data = await res.json();
+            
+            if (data.status === 'success') {
+                alert('✅ 测试消息已发送！请检查钉钉群。');
+            } else {
+                alert('❌ 发送失败：' + (data.msg || ''));
+            }
+        }
+
+        // 编辑项目（自动回填）
         async function editProject(id) {
             document.getElementById('edit_id').value = id;
             const res = await fetch(`/get_project/${id}`);
@@ -139,7 +155,6 @@
                 document.getElementById('edit_repeat_every').value = data.repeat_every;
                 document.getElementById('edit_repeat_unit').value = data.repeat_unit;
             }
-            
             document.getElementById('editModal').style.display = 'block';
         }
 
@@ -157,9 +172,14 @@
             document.getElementById('editModal').style.display = 'none';
         }
 
-        // 表单提交等函数（保持简洁）
-        document.getElementById('addForm').onsubmit = async (e) => { e.preventDefault(); const fd = new FormData(e.target); await fetch('/add', {method:'POST', body:fd}); location.reload(); };
-        
+        // 其他表单提交
+        document.getElementById('addForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const fd = new FormData(e.target);
+            await fetch('/add', {method:'POST', body:fd});
+            location.reload();
+        };
+
         document.getElementById('editForm').onsubmit = async (e) => {
             e.preventDefault();
             const fd = new FormData();
@@ -175,10 +195,13 @@
         };
 
         async function deleteProject(id) {
-            if (confirm('确定删除？')) await fetch(`/delete/${id}`, {method:'POST'}); location.reload();
+            if (confirm('确定删除此项目？')) {
+                await fetch(`/delete/${id}`, {method:'POST'});
+                location.reload();
+            }
         }
 
-        // 钉钉配置和测试（略，与之前一致）
+        // 全局测试
         document.getElementById('configForm').onsubmit = async (e) => {
             e.preventDefault();
             const fd = new FormData();
@@ -187,11 +210,6 @@
             await fetch('/config', {method:'POST', body:fd});
             alert('配置已保存');
         };
-
-        async function testDingtalk() {
-            // ... 同之前版本
-            alert('测试发送中...');
-        }
     </script>
 </body>
 </html>
